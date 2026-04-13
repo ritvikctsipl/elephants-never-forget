@@ -42,7 +42,7 @@ When showing analytics, add context — raw numbers alone aren't useful:
 |--------|------|-----------------|----------------|
 | Reversal rate | <10% | >25% | Spend more time on requirements before starting |
 | Decision stability | >70% | <40% | Research alternatives more thoroughly upfront |
-| Friction rate | <0.5/session | >2/session | Write a brief goal before each session |
+| Avg redirects/session | <0.5 | >2 | Write a brief goal before each session |
 | Completion rate | >80% | <60% | Set smaller, more focused session goals |
 | Session focus | >70% single-topic | <40% | Resist scope creep; finish one thing first |
 

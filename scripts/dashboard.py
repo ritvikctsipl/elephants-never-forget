@@ -9,12 +9,14 @@ Usage:
     python dashboard.py [--project-dir PATH] [--output PATH] [--no-open]
 """
 
+import html
 import json
 import sys
 import os
 import webbrowser
 import argparse
 from datetime import datetime
+from pathlib import Path
 
 # Import the analytics engine
 sys.path.insert(0, os.path.dirname(__file__))
@@ -146,7 +148,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 {insights_html}
 
 <br><br>
-<p class="subtitle">Data from .claude-sessions/ &mdash; <a href="https://github.com/ritvikctsipl/elephants-never-forget" style="color:var(--accent)">Elephants Never Forget</a></p>
+<p class="subtitle">Data from .claude-sessions/ &mdash; Elephants Never Forget</p>
 
 <script>
 const chartDefaults = {{
@@ -192,7 +194,7 @@ new Chart(document.getElementById('confidenceChart'), {{
     labels: {conf_labels_json},
     datasets: [{{
       data: {conf_values_json},
-      backgroundColor: ['#3fb950', '#d29922', '#f85149', '#8b949e'],
+      backgroundColor: {conf_colors_json},
     }}]
   }},
   options: {{ plugins: {{ legend: {{ position: 'right' }} }} }}
@@ -269,7 +271,7 @@ def generate_html(metrics):
     # Insights HTML
     from analytics import generate_insights
     insights = generate_insights(metrics)
-    insights_html = "\n".join(f'<div class="insight">{i}</div>' for i in insights)
+    insights_html = "\n".join(f'<div class="insight">{html.escape(i)}</div>' for i in insights)
 
     # Chart data
     session_dates = sorted(t.get("sessions_by_date", {}).keys())
@@ -280,9 +282,12 @@ def generate_html(metrics):
     topic_values = [t[1] for t in topics]
 
     conf = p.get("confidence_distribution", {})
+    conf_color_map = {"high": "#3fb950", "medium": "#d29922", "low": "#f85149", "unknown": "#8b949e"}
     conf_order = ["high", "medium", "low", "unknown"]
-    conf_labels = [l.capitalize() for l in conf_order if l in conf]
-    conf_values = [conf[l] for l in conf_order if l in conf]
+    conf_present = [l for l in conf_order if l in conf]
+    conf_labels = [l.capitalize() for l in conf_present]
+    conf_values = [conf[l] for l in conf_present]
+    conf_colors = [conf_color_map[l] for l in conf_present]
 
     days = pat.get("sessions_by_day", {})
     day_values = [days.get(d, 0) for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]]
@@ -315,6 +320,7 @@ def generate_html(metrics):
         topic_labels_json=json.dumps(topic_labels),
         topic_values_json=json.dumps(topic_values),
         conf_labels_json=json.dumps(conf_labels),
+        conf_colors_json=json.dumps(conf_colors),
         conf_values_json=json.dumps(conf_values),
         day_values_json=json.dumps(day_values),
     )
@@ -342,7 +348,7 @@ def main():
     print(f"Dashboard saved to: {output_path}")
 
     if not args.no_open:
-        webbrowser.open(f"file://{os.path.abspath(output_path)}")
+        webbrowser.open(Path(output_path).resolve().as_uri())
         print("Opened in browser.")
 
 

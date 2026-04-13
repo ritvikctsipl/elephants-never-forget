@@ -13,9 +13,15 @@ Design principles:
 """
 
 import json
+import re
 import sys
 import os
 from datetime import datetime, timezone
+
+
+def sanitize_session_id(sid):
+    """Strip anything that isn't alphanumeric or hyphen to prevent path traversal."""
+    return re.sub(r"[^a-zA-Z0-9\-]", "", sid) or "unknown"
 
 
 def get_sessions_dir():
@@ -38,7 +44,7 @@ def append_jsonl(filepath, entry):
 
 def handle_session_start(input_data, sessions_dir):
     """Log session start. Return previous context for injection."""
-    session_id = input_data.get("session_id", "unknown")
+    session_id = sanitize_session_id(input_data.get("session_id", "unknown"))
 
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -60,7 +66,7 @@ def handle_session_start(input_data, sessions_dir):
 
 def handle_user_prompt(input_data, sessions_dir):
     """Log user prompt to session JSONL and global log."""
-    session_id = input_data.get("session_id", "unknown")
+    session_id = sanitize_session_id(input_data.get("session_id", "unknown"))
     prompt = input_data.get("prompt", "")
 
     entry = {
@@ -83,7 +89,7 @@ def handle_user_prompt(input_data, sessions_dir):
 
 def handle_post_tool_use(input_data, sessions_dir):
     """Log tool usage (captures Claude's actions/responses)."""
-    session_id = input_data.get("session_id", "unknown")
+    session_id = sanitize_session_id(input_data.get("session_id", "unknown"))
     tool_name = input_data.get("tool_name", "unknown")
     tool_input = input_data.get("tool_input", {})
     tool_response = input_data.get("tool_response", "")
@@ -121,7 +127,7 @@ def handle_post_tool_use(input_data, sessions_dir):
 
 def handle_stop(input_data, sessions_dir):
     """Log when Claude finishes responding."""
-    session_id = input_data.get("session_id", "unknown")
+    session_id = sanitize_session_id(input_data.get("session_id", "unknown"))
 
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -133,29 +139,9 @@ def handle_stop(input_data, sessions_dir):
     append_jsonl(raw_path, entry)
 
 
-def handle_pre_compact(input_data, sessions_dir):
-    """Critical: capture state before context compression."""
-    session_id = input_data.get("session_id", "unknown")
-
-    entry = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "event": "pre_compact",
-        "session_id": session_id,
-        "note": "Context compaction triggered — ensure session file is up to date",
-    }
-
-    raw_path = os.path.join(sessions_dir, "raw", f"{session_id}.jsonl")
-    append_jsonl(raw_path, entry)
-
-    log_path = os.path.join(sessions_dir, "log.md")
-    with open(log_path, "a", encoding="utf-8") as f:
-        now = datetime.now().strftime("%H:%M")
-        f.write(f"- [{now}] COMPACT: Context compaction triggered for {session_id[:8]}\n")
-
-
 def handle_session_end(input_data, sessions_dir):
     """Log session end."""
-    session_id = input_data.get("session_id", "unknown")
+    session_id = sanitize_session_id(input_data.get("session_id", "unknown"))
 
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -177,7 +163,6 @@ EVENT_HANDLERS = {
     "UserPromptSubmit": handle_user_prompt,
     "PostToolUse": handle_post_tool_use,
     "Stop": handle_stop,
-    "PreCompact": handle_pre_compact,
     "SessionEnd": handle_session_end,
 }
 

@@ -1,0 +1,13 @@
+{
+  "name": "elephants-never-forget",
+  "version": "1.0.0",
+  "description": "Cross-session memory system that tracks conversations, decisions, and project evolution with progressive summarization",
+  "author": {
+    "name": "claude-skills"
+  },
+  "hooks": "./hooks/hooks.json",
+  "skills": "./skills/",
+  "repository": "https://github.com/ritvikctsipl/elephants-never-forget",
+  "license": "MIT",
+  "keywords": ["memory", "session", "context", "decisions", "analytics", "cross-session"]
+}

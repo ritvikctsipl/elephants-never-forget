@@ -1,5 +1,4 @@
 {
-  "description": "Elephants Never Forget — session tracking hooks for cross-session memory",
   "hooks": {
     "SessionStart": [
       {

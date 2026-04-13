@@ -101,6 +101,8 @@ This generates a self-contained HTML dashboard with Chart.js visualizations.
 - Python 3.8+
 - Claude Code CLI
 
+**Important:** Add `.claude-sessions/` to your project's `.gitignore` to avoid committing session data (which may contain prompts and error messages).
+
 ## Inspired by
 
 - [Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)

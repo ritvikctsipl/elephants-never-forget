@@ -29,41 +29,11 @@ This skill complements (does not replace) Claude's built-in memory system. Use b
 
 ## Session Lifecycle
 
-```dot
-digraph session_flow {
-    "Session starts" [shape=doublecircle];
-    "Previous sessions exist?" [shape=diamond];
-    "Read index.md + decisions.md" [shape=box];
-    "First session? Create index.md, decisions.md, topics.md" [shape=box];
-    "Create session file" [shape=box];
-    "Work proceeds" [shape=ellipse];
-    "Significant decision?" [shape=diamond];
-    "Write Y-statement to decisions.md" [shape=box];
-    "Update session file" [shape=box];
-    "Session ending?" [shape=diamond];
-    "Write anchored summary" [shape=box];
-    "Update index.md + topics.md" [shape=box];
-    "Compress older sessions if needed" [shape=box];
-    "Session complete" [shape=doublecircle];
-
-    "Session starts" -> "Previous sessions exist?";
-    "Previous sessions exist?" -> "Read index.md + decisions.md" [label="yes"];
-    "Previous sessions exist?" -> "First session? Create index.md, decisions.md, topics.md" [label="no"];
-    "Read index.md + decisions.md" -> "Create session file";
-    "First session? Create index.md, decisions.md, topics.md" -> "Create session file";
-    "Create session file" -> "Work proceeds";
-    "Work proceeds" -> "Significant decision?" [label="every 5-10 interactions or at breakpoints"];
-    "Significant decision?" -> "Write Y-statement to decisions.md" [label="yes"];
-    "Significant decision?" -> "Update session file" [label="no"];
-    "Write Y-statement to decisions.md" -> "Update session file";
-    "Update session file" -> "Work proceeds";
-    "Work proceeds" -> "Session ending?" [label="user says done or /exit"];
-    "Session ending?" -> "Write anchored summary";
-    "Write anchored summary" -> "Update index.md + topics.md";
-    "Update index.md + topics.md" -> "Compress older sessions if needed";
-    "Compress older sessions if needed" -> "Session complete";
-}
-```
+1. **Start**: Previous sessions? Read injected context. First time? Create `index.md`, `decisions.md`, `topics.md`.
+2. **Create session file**: `sessions/YYYY-MM-DD-topic-slug.md`
+3. **Work**: Every 5-10 interactions, update session file. On significant decisions, write Y-statement to both session file and `decisions.md`.
+4. **End**: Write anchored summary, update `index.md` + `topics.md`, set status: completed.
+5. **Compress**: If older sessions exist beyond tier thresholds, compress one tier (oldest first).
 
 ## Opt-Out
 
@@ -113,7 +83,7 @@ summary: "One sentence summary"
 ---
 ```
 
-- `session_id`: First 8 characters of the session ID from Claude Code (provided by hooks in the injected context, or available as `$CLAUDE_SESSION_ID`). If unknown, use the first 8 chars of today's date + slug hash.
+- `session_id`: First 8 characters of the session ID from Claude Code (provided by hooks in the injected context, or available as `$CLAUDE_CODE_SESSION_ID`). If unknown, use the first 8 chars of today's date + slug hash.
 
 **Body sections** (write only sections that have content):
 

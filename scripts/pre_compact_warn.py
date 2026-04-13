@@ -7,15 +7,21 @@ Also logs the event to the raw JSONL.
 """
 
 import json
+import re
 import sys
 import os
 from datetime import datetime, timezone
 
 
+def sanitize_session_id(sid):
+    """Strip anything that isn't alphanumeric or hyphen."""
+    return re.sub(r"[^a-zA-Z0-9\-]", "", sid) or "unknown"
+
+
 def main():
     try:
         input_data = json.load(sys.stdin)
-        session_id = input_data.get("session_id", "unknown")
+        session_id = sanitize_session_id(input_data.get("session_id", "unknown"))
         project_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
         sessions_dir = os.path.join(project_dir, ".claude-sessions")
 
