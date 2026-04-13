@@ -1,6 +1,6 @@
 ---
 name: elephants-never-forget
-description: Use when starting a session in a project, making significant decisions, completing tasks, or ending a session. Maintains cross-session context by tracking conversations, decisions, and project evolution in .claude-sessions/. Also use when you need to recall what was discussed or decided in previous sessions.
+description: Use when starting a new session, ending a session, making or reversing significant decisions, or when the user asks what was discussed or decided in previous sessions. Also use when a PreCompact warning appears or when resuming after an interrupted session.
 ---
 
 # Elephants Never Forget
@@ -99,7 +99,7 @@ A decision is significant if it would affect future sessions or is worth remembe
 - `YYYY-MM-DD` — today's date
 - `topic-slug` — 2-5 word kebab-case summary derived from the session's primary goal. Max 40 chars for the slug.
 - Only use `[a-z0-9-]` in the slug. No spaces, underscores, or special characters.
-- **Same-day collision**: Append session ID prefix: `2026-04-13-auth-refactor-a1b2.md`
+- **Same-day collision**: Append session ID prefix: `2026-04-13-api-refactor-a1b2.md`
 
 **Frontmatter:**
 ```yaml
@@ -195,11 +195,11 @@ Keep each entry to one line, ~30 tokens. At 100+ sessions, archive older entries
 Topics are the same as tags. Each tag from a session's frontmatter gets an entry here.
 
 ```markdown
-## auth
-- [2026-04-13-auth-refactor](sessions/2026-04-13-auth-refactor.md): Refactored auth to JWT
+## payments
+- [2026-04-13-payment-flow](sessions/2026-04-13-payment-flow.md): Built Stripe checkout integration
 
-## database
-- [2026-04-12-db-setup](sessions/2026-04-12-db-setup.md): Set up PostgreSQL with Prisma
+## testing
+- [2026-04-12-test-setup](sessions/2026-04-12-test-setup.md): Configured test framework and fixtures
 ```
 
 ### First Session Initialization
@@ -241,20 +241,20 @@ Three tiers based on age:
 **Anchored summary format** (warm tier — replaces full body):
 ```markdown
 ## Intent
-Set up authentication for the Express API.
+Add search functionality to the product catalog.
 
 ## Changes Made
-- Created `src/middleware/session.ts` with express-session config
-- Added connect-redis as session store in `docker-compose.yml`
+- Created `src/services/search.ts` with full-text search logic
+- Updated `src/routes/products.ts` to expose search endpoint
 
 ## Decisions Taken
-- [14:10] Y: In context of session storage, decided connect-redis over connect-mongo, to achieve fast TTL-based expiration, accepting Redis dependency. Confidence: high
+- [14:10] Y: In context of search engine, decided Elasticsearch over Algolia, to achieve self-hosted control, accepting operational overhead. Confidence: high
 
 ## Next Steps
-- [ ] Configure Redis connection for production
+- [ ] Add search result pagination
 ```
 
-Note how file paths (`src/middleware/session.ts`) survive verbatim in the warm tier.
+Note how file paths (`src/services/search.ts`) survive verbatim in the warm tier.
 
 ### What NEVER gets compressed
 - Exact file paths and error codes
@@ -292,8 +292,8 @@ For very long sessions, keep the Interactions section manageable:
 
 ## Common Mistakes
 
-- **Logging every single interaction**: Only log significant ones. "Read a file" is noise. "Decided to restructure the auth module" is signal.
-- **Compressing file paths**: Never summarize `src/auth/middleware.ts` to "the auth file" — paths must survive compression verbatim.
+- **Logging every single interaction**: Only log significant ones. "Read a file" is noise. "Decided to switch from REST to GraphQL" is signal.
+- **Compressing file paths**: Never summarize `src/services/search.ts` to "the search file" — paths must survive compression verbatim.
 - **Editing old decisions**: Create new entries, strikethrough old. The reversal chain IS the analytical value.
 - **Forgetting to update index.md**: Every session must have an index entry. No orphan session files.
 - **Writing to `raw/` or `log.md`**: The hooks handle those. You handle `sessions/`, `index.md`, `topics.md`, `decisions.md`.
