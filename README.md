@@ -64,6 +64,38 @@ The plugin creates a `.claude-sessions/` directory in each project:
   - **Warm** (4-30 days): Anchored summary (intent, changes, decisions, next steps)
   - **Cold** (30+ days): Frontmatter + summary only; decisions preserved in decisions.md
 
+## Analytics Dashboard
+
+The plugin includes an analytics system that helps you understand your collaboration patterns.
+
+### Quick stats (in conversation)
+Ask Claude to show your analytics, or use the `session-analytics` skill. You'll get an inline markdown dashboard with Unicode sparklines and progress bars:
+
+```
+| Metric              | Value  | Trend        |
+|---------------------|--------|--------------|
+| Reversal rate       | 7.1%   | ██████████████░░ |
+| Decision stability  | 82%    | █████████████░░░ |
+| Friction rate       | 0.3/s  | Clear communicator |
+```
+
+### Full dashboard (in browser)
+For interactive charts, run:
+```bash
+python scripts/dashboard.py --project-dir .
+```
+This generates a self-contained HTML dashboard with Chart.js visualizations.
+
+### Metrics tracked
+
+| Category | What it measures |
+|----------|-----------------|
+| **Planning** | Decision reversal rate, stability (survive >7 days), confidence distribution |
+| **Clarity** | Friction events, redirects per session, prompt frequency |
+| **Efficiency** | Completion rate, open items backlog, session focus |
+| **Patterns** | Topic distribution, recurring errors, active days, tool usage |
+| **Insights** | Actionable recommendations based on your patterns |
+
 ## Requirements
 
 - Python 3.8+
