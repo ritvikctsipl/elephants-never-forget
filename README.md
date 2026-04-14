@@ -18,12 +18,25 @@ A Claude Code plugin that maintains cross-session memory through structured sess
 
 ## Install
 
-Copy or symlink this directory into your Claude Code plugins path, or install via:
+Add this to your `~/.claude/settings.json`:
 
-```bash
-# From the Claude Code CLI
-/install-plugin /path/to/elephants_never_forget
+```json
+{
+  "extraKnownMarketplaces": {
+    "elephants-never-forget": {
+      "source": {
+        "source": "github",
+        "repo": "ritvikctsipl/elephants-never-forget"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "elephants-never-forget@elephants-never-forget": true
+  }
+}
 ```
+
+Then restart Claude Code. The plugin auto-installs globally — skills, hooks, and scripts are all handled for you.
 
 ## File Structure
 

@@ -1,0 +1,16 @@
+{
+  "name": "elephants-never-forget",
+  "description": "Cross-session memory — session tracking, decision logging, reversal detection, and progressive summarization.",
+  "owner": {
+    "name": "ritvikctsipl",
+    "url": "https://github.com/ritvikctsipl"
+  },
+  "plugins": [
+    {
+      "name": "elephants-never-forget",
+      "description": "Cross-session memory plugin with structured session tracking, Y-statement decision logging, reversal detection, friction analysis, and progressive summarization.",
+      "version": "1.0.0",
+      "source": "./"
+    }
+  ]
+}
