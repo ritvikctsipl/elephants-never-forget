@@ -396,5 +396,56 @@ Containerize the app and set up CI/CD pipeline.
     print(f"  8 sessions, 12 decisions, 1 reversal, 4 errors, 3 friction events")
 
 
+# ── Synthetic transcripts (added in v1.1.0) ────────────────────────────
+
+def generate_synthetic_transcript(path, session_id, num_turns=10,
+                                   input_tokens_per_turn=1500,
+                                   output_tokens_per_turn=600,
+                                   cache_read_tokens=300,
+                                   cache_creation_tokens=150,
+                                   model="claude-opus-4-7",
+                                   compaction_at=None):
+    """Write a Claude Code-compatible transcript JSONL to `path`.
+
+    Mirrors tests/helpers.make_synthetic_transcript but lives in the user-facing
+    test data generator so anyone can produce sample transcripts for
+    exercising analytics without running the full test suite.
+    """
+    import json as _json
+    import os as _os
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    _os.makedirs(_os.path.dirname(path) or ".", exist_ok=True)
+    t0 = _dt(2026, 4, 17, 10, 0, 0, tzinfo=_tz.utc)
+    with open(path, "w", encoding="utf-8") as f:
+        for i in range(num_turns):
+            ts = (t0 + _td(seconds=i * 30)).isoformat()
+            user_line = {
+                "type": "user", "timestamp": ts, "sessionId": session_id,
+                "message": {"role": "user", "content": f"prompt {i}"},
+            }
+            f.write(_json.dumps(user_line) + "\n")
+            assistant_ts = (t0 + _td(seconds=i * 30 + 5)).isoformat()
+            assistant_line = {
+                "type": "assistant", "timestamp": assistant_ts, "sessionId": session_id,
+                "message": {
+                    "role": "assistant", "model": model,
+                    "content": [{"type": "text", "text": f"reply {i}"}],
+                    "usage": {
+                        "input_tokens": input_tokens_per_turn,
+                        "output_tokens": output_tokens_per_turn,
+                        "cache_read_input_tokens": cache_read_tokens,
+                        "cache_creation_input_tokens": cache_creation_tokens,
+                    },
+                },
+            }
+            f.write(_json.dumps(assistant_line) + "\n")
+            if compaction_at is not None and i == compaction_at:
+                comp_line = {
+                    "type": "system", "timestamp": assistant_ts,
+                    "sessionId": session_id, "subtype": "compact_boundary",
+                }
+                f.write(_json.dumps(comp_line) + "\n")
+
+
 if __name__ == "__main__":
     main()
