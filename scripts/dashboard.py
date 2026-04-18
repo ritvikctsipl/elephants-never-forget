@@ -215,6 +215,112 @@ new Chart(document.getElementById('dayChart'), {{
   options: {{ plugins: {{ legend: {{ display: false }} }}, scales: {{ y: {{ beginAtZero: true, ticks: {{ stepSize: 1 }} }} }} }}
 }});
 </script>
+
+<section>
+  <h2>Token Spend (v1.1.0)</h2>
+  <canvas id="chartTokensByType"></canvas>
+  <canvas id="chartCacheHitRate"></canvas>
+</section>
+<section>
+  <h2>Estimated Cost</h2>
+  <canvas id="chartCostPerSession"></canvas>
+  <p class="disclaimer">Estimates use public per-model rates as of 2026-01. Unknown models are omitted.</p>
+</section>
+<section>
+  <h2>Context Pressure</h2>
+  <canvas id="chartContextUtilization"></canvas>
+</section>
+<section>
+  <h2>Pacing</h2>
+  <canvas id="chartPromptToFirstTool"></canvas>
+</section>
+<script>
+(function() {{
+  const METRICS = {v11_metrics_json};
+  const tokens = METRICS.tokens || {{}};
+  const cost = METRICS.cost || {{}};
+  const pressure = METRICS.pressure || {{}};
+  const pacing = METRICS.pacing || {{}};
+  const sids = Object.keys(tokens);
+
+  if (sids.length > 0) {{
+    new Chart(document.getElementById('chartTokensByType'), {{
+      type: 'bar',
+      data: {{
+        labels: sids,
+        datasets: [
+          {{label: 'input',          data: sids.map(s => tokens[s].input          || 0), stack: 't'}},
+          {{label: 'output',         data: sids.map(s => tokens[s].output         || 0), stack: 't'}},
+          {{label: 'cache_read',     data: sids.map(s => tokens[s].cache_read     || 0), stack: 't'}},
+          {{label: 'cache_creation', data: sids.map(s => tokens[s].cache_creation || 0), stack: 't'}},
+        ],
+      }},
+      options: {{scales: {{x: {{stacked: true}}, y: {{stacked: true}}}}}},
+    }});
+
+    new Chart(document.getElementById('chartCacheHitRate'), {{
+      type: 'line',
+      data: {{
+        labels: sids,
+        datasets: [{{
+          label: 'Cache hit rate %',
+          data: sids.map(s => tokens[s].cache_hit_rate || 0),
+          tension: 0.2,
+        }}],
+      }},
+    }});
+  }}
+
+  const knownCost = sids.filter(s => cost[s] && cost[s].cost_usd != null);
+  if (knownCost.length > 0) {{
+    new Chart(document.getElementById('chartCostPerSession'), {{
+      type: 'bar',
+      data: {{
+        labels: knownCost,
+        datasets: [{{label: 'Cost USD', data: knownCost.map(s => cost[s].cost_usd)}}],
+      }},
+    }});
+  }}
+
+  const knownPressure = sids.filter(s => pressure[s] && pressure[s].max_utilization_pct != null);
+  if (knownPressure.length > 0) {{
+    new Chart(document.getElementById('chartContextUtilization'), {{
+      type: 'line',
+      data: {{
+        labels: knownPressure,
+        datasets: [{{
+          label: 'Max utilization %',
+          data: knownPressure.map(s => pressure[s].max_utilization_pct),
+          tension: 0.2,
+        }}],
+      }},
+      options: {{scales: {{y: {{min: 0, max: 100}}}}}},
+    }});
+  }}
+
+  const pacingSids = Object.keys(pacing);
+  if (pacingSids.length > 0) {{
+    const flat = [];
+    pacingSids.forEach(s => (pacing[s].prompt_to_first_tool_ms || []).forEach(v => flat.push(v)));
+    if (flat.length > 0) {{
+      const buckets = [0, 500, 1000, 2500, 5000, 10000, 30000];
+      const counts = new Array(buckets.length).fill(0);
+      flat.forEach(v => {{
+        for (let i = buckets.length - 1; i >= 0; i--) {{
+          if (v >= buckets[i]) {{ counts[i]++; break; }}
+        }}
+      }});
+      new Chart(document.getElementById('chartPromptToFirstTool'), {{
+        type: 'bar',
+        data: {{
+          labels: buckets.map(b => b < 1000 ? `${{b}}ms` : `${{b/1000}}s`),
+          datasets: [{{label: 'Prompt \u2192 first tool (count)', data: counts}}],
+        }},
+      }});
+    }}
+  }}
+}})();
+</script>
 </body>
 </html>"""
 
@@ -295,6 +401,13 @@ def generate_html(metrics):
     stability = p["decision_stability"]
     completion = e["completion_rate"]
 
+    v11_metrics_json = json.dumps({
+        "tokens": metrics.get("tokens", {}),
+        "cost": metrics.get("cost", {}),
+        "pressure": metrics.get("pressure", {}),
+        "pacing": metrics.get("pacing", {}),
+    })
+
     return HTML_TEMPLATE.format(
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
         total_sessions=s["total_sessions"],
@@ -323,6 +436,7 @@ def generate_html(metrics):
         conf_colors_json=json.dumps(conf_colors),
         conf_values_json=json.dumps(conf_values),
         day_values_json=json.dumps(day_values),
+        v11_metrics_json=v11_metrics_json,
     )
 
 
