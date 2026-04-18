@@ -535,6 +535,84 @@ def format_markdown(metrics):
             lines.append(f"- `{err[:80]}` ({count} times)")
         lines.append("")
 
+    # ── Token Spend (v1.1.0) ──
+    tokens = metrics.get("tokens", {})
+    if tokens:
+        lines.append("### Token Spend")
+        lines.append("")
+        total_input = sum(v.get("input", 0) for v in tokens.values())
+        total_output = sum(v.get("output", 0) for v in tokens.values())
+        total_cache_read = sum(v.get("cache_read", 0) for v in tokens.values())
+        total_cache_creation = sum(v.get("cache_creation", 0) for v in tokens.values())
+        overall_total = total_input + total_output + total_cache_read + total_cache_creation
+        avg_hit_rate = (
+            sum(v.get("cache_hit_rate", 0.0) for v in tokens.values()) / len(tokens)
+            if tokens else 0.0
+        )
+        lines.append("| Metric | Value |")
+        lines.append("|--------|-------|")
+        lines.append(f"| Total input tokens | {total_input:,} |")
+        lines.append(f"| Total output tokens | {total_output:,} |")
+        lines.append(f"| Total cache_read tokens | {total_cache_read:,} |")
+        lines.append(f"| Total cache_creation tokens | {total_cache_creation:,} |")
+        lines.append(f"| Overall total | {overall_total:,} |")
+        lines.append(f"| Avg cache hit rate | {round(avg_hit_rate, 1)}% {bar(avg_hit_rate, 100)} |")
+        lines.append("")
+
+    # ── Estimated Cost (v1.1.0) ──
+    cost = metrics.get("cost", {})
+    known_costs = [v for v in cost.values() if v.get("cost_usd") is not None]
+    if known_costs:
+        lines.append("### Estimated Cost")
+        lines.append("")
+        total_cost = sum(v.get("cost_usd", 0.0) for v in known_costs)
+        lines.append(f"| Metric | Value |")
+        lines.append(f"|--------|-------|")
+        lines.append(f"| Sessions with known pricing | {len(known_costs)} / {len(cost)} |")
+        lines.append(f"| Total estimated spend | ${total_cost:.2f} |")
+        if len(known_costs) > 0:
+            per_sess = total_cost / len(known_costs)
+            lines.append(f"| Avg cost per session | ${per_sess:.2f} |")
+        disclaimer = known_costs[0].get("disclaimer", "")
+        lines.append("")
+        lines.append(f"_{disclaimer}_")
+        unknown_count = len(cost) - len(known_costs)
+        if unknown_count > 0:
+            lines.append(f"_{unknown_count} session(s) had unknown models; not priced._")
+        lines.append("")
+
+    # ── Context Pressure (v1.1.0) ──
+    pressure = metrics.get("pressure", {})
+    if pressure:
+        known_pressure = [v for v in pressure.values() if v.get("max_utilization_pct") is not None]
+        lines.append("### Context Pressure")
+        lines.append("")
+        total_compactions = sum(v.get("compaction_count", 0) for v in pressure.values())
+        lines.append(f"| Metric | Value |")
+        lines.append(f"|--------|-------|")
+        lines.append(f"| Total compactions across sessions | {total_compactions} |")
+        if known_pressure:
+            max_seen = max(v.get("max_utilization_pct", 0.0) for v in known_pressure)
+            avg_seen = sum(v.get("max_utilization_pct", 0.0) for v in known_pressure) / len(known_pressure)
+            lines.append(f"| Peak utilization seen | {max_seen:.1f}% {bar(max_seen, 100)} |")
+            lines.append(f"| Avg peak utilization | {avg_seen:.1f}% {bar(avg_seen, 100)} |")
+        lines.append("")
+
+    # ── Pacing (v1.1.0) ──
+    pacing = metrics.get("pacing", {})
+    if pacing:
+        lines.append("### Pacing")
+        lines.append("")
+        medians = [v.get("inter_turn_median_ms", 0.0) for v in pacing.values() if v.get("inter_turn_median_ms", 0.0) > 0]
+        total_idle = sum(len(v.get("idle_gaps_sec", [])) for v in pacing.values())
+        lines.append(f"| Metric | Value |")
+        lines.append(f"|--------|-------|")
+        if medians:
+            avg_median = sum(medians) / len(medians)
+            lines.append(f"| Avg median inter-turn latency | {avg_median/1000:.1f}s |")
+        lines.append(f"| Total idle gaps (>60s) | {total_idle} |")
+        lines.append("")
+
     # ── Insights ──
     lines.append("### Insights")
     lines.append("")
