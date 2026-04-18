@@ -185,3 +185,71 @@ def estimate_cost(usage, model=None):
         "model": model,
         "pricing_version": "v1",
     }
+
+
+from datetime import datetime as _dt
+
+
+def _parse_ts(s):
+    if not s:
+        return None
+    try:
+        # Accept both Z and +00:00 suffixes
+        return _dt.fromisoformat(s.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+def _percentile(values, p):
+    """Nearest-rank percentile. values must be sorted."""
+    if not values:
+        return 0.0
+    idx = min(len(values) - 1, int(round((p / 100.0) * (len(values) - 1))))
+    return values[idx]
+
+
+def compute_pacing(transcript):
+    """Compute inter-turn latencies and idle gaps.
+
+    Returns {
+        "inter_turn_median_ms": float,
+        "inter_turn_p95_ms": float,
+        "idle_gaps_sec": [float],    # gaps > 60s between consecutive messages
+        "prompt_to_first_tool_ms": [float],  # user prompt -> first tool_use after it
+    }
+    """
+    messages = transcript.get("messages", [])
+    deltas_ms = []
+    idle_gaps = []
+    prev_ts = None
+    for m in messages:
+        ts = _parse_ts(m.get("timestamp"))
+        if ts is None:
+            continue
+        if prev_ts is not None:
+            delta = (ts - prev_ts).total_seconds()
+            deltas_ms.append(delta * 1000.0)
+            if delta > 60:
+                idle_gaps.append(round(delta, 1))
+        prev_ts = ts
+
+    prompt_to_tool = []
+    tool_uses = transcript.get("tool_uses", [])
+    user_ts_list = [_parse_ts(m.get("timestamp")) for m in messages if m.get("type") == "user"]
+    user_ts_list = [t for t in user_ts_list if t is not None]
+    for u_ts in user_ts_list:
+        following_tools = [
+            _parse_ts(t.get("timestamp")) for t in tool_uses
+            if _parse_ts(t.get("timestamp")) and _parse_ts(t.get("timestamp")) > u_ts
+        ]
+        if following_tools:
+            delta_s = (min(following_tools) - u_ts).total_seconds()
+            prompt_to_tool.append(round(delta_s * 1000.0, 1))
+
+    deltas_sorted = sorted(deltas_ms)
+    return {
+        "inter_turn_median_ms": round(_percentile(deltas_sorted, 50), 1),
+        "inter_turn_p95_ms": round(_percentile(deltas_sorted, 95), 1),
+        "idle_gaps_sec": idle_gaps,
+        "prompt_to_first_tool_ms": prompt_to_tool,
+    }

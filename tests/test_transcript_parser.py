@@ -88,3 +88,22 @@ def test_estimate_cost_none_model():
     usage = {"input": 1000, "output": 500, "cache_read": 0, "cache_creation": 0}
     result = tp.estimate_cost(usage, model=None)
     assert result["cost_usd"] is None
+
+
+def test_compute_pacing_basic(tmp_path):
+    path = str(tmp_path / "t.jsonl")
+    make_synthetic_transcript(path, session_id="s", num_turns=4)
+    # Synthetic turns are 30s apart; assistant replies 5s after each prompt.
+    t = tp.parse_transcript(path)
+    pacing = tp.compute_pacing(t)
+    assert pacing["inter_turn_median_ms"] > 0
+    assert pacing["inter_turn_p95_ms"] >= pacing["inter_turn_median_ms"]
+    assert isinstance(pacing["idle_gaps_sec"], list)
+
+
+def test_compute_pacing_empty():
+    pacing = tp.compute_pacing({})
+    assert pacing["inter_turn_median_ms"] == 0
+    assert pacing["inter_turn_p95_ms"] == 0
+    assert pacing["idle_gaps_sec"] == []
+    assert pacing["prompt_to_first_tool_ms"] == []
