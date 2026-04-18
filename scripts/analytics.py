@@ -20,6 +20,13 @@ import argparse
 from datetime import datetime, timedelta
 from collections import Counter, defaultdict
 
+# v1.1.0: transcript-derived metrics
+try:
+    import transcript_parser
+except ImportError:
+    # allow module to load even if parser is missing; analytics will skip transcript data
+    transcript_parser = None
+
 
 # ── Unicode chart helpers (zero dependencies) ──────────────────────────
 
@@ -373,6 +380,34 @@ def compute_metrics(sessions_dir):
             "prompts_per_session": prompt_values,
         },
     }
+
+    # ── v1.1.0: transcript-derived metrics (tokens/cost/pacing/pressure) ──
+    tokens_by_sid = {}
+    cost_by_sid = {}
+    pacing_by_sid = {}
+    pressure_by_sid = {}
+    cwd = os.path.dirname(os.path.abspath(sessions_dir))  # project root
+    if transcript_parser is not None:
+        for s in sessions:
+            sid = s.get("session_id") or ""
+            if not sid:
+                continue
+            tpath = transcript_parser.find_transcript_path(sid, cwd=cwd)
+            if not tpath:
+                continue
+            t = transcript_parser.parse_transcript(tpath)
+            if not t:
+                continue
+            tokens_by_sid[sid] = transcript_parser.compute_usage_totals(t)
+            cost_by_sid[sid] = transcript_parser.estimate_cost(
+                tokens_by_sid[sid], model=t.get("model"))
+            pacing_by_sid[sid] = transcript_parser.compute_pacing(t)
+            pressure_by_sid[sid] = transcript_parser.compute_context_pressure(
+                t, model=t.get("model"))
+    metrics["tokens"] = tokens_by_sid
+    metrics["cost"] = cost_by_sid
+    metrics["pacing"] = pacing_by_sid
+    metrics["pressure"] = pressure_by_sid
 
     return metrics
 
