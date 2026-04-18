@@ -3,3 +3,4 @@ __pycache__/
 .claude-sessions/
 *.log
 dashboard.html
+.pytest_cache/
