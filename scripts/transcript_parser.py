@@ -253,3 +253,64 @@ def compute_pacing(transcript):
         "idle_gaps_sec": idle_gaps,
         "prompt_to_first_tool_ms": prompt_to_tool,
     }
+
+
+# Context window sizes in tokens. Missing model → window_tokens=None, utilization=None.
+MODEL_WINDOWS = {
+    "claude-opus-4-7":    200_000,
+    "claude-opus-4-6":    200_000,
+    "claude-sonnet-4-6":  200_000,
+    "claude-sonnet-4-5":  200_000,
+    "claude-haiku-4-5":   200_000,
+}
+
+
+def compute_context_pressure(transcript, model=None):
+    """Estimate context window utilization over the session.
+
+    Reconstructs cumulative input token load between compactions. Utilization is
+    the peak cumulative load divided by the model's window size.
+
+    Returns {
+        "window_tokens": int | None,
+        "max_utilization_pct": float | None,
+        "compaction_count": int,
+        "utilization_trend": [(timestamp, pct), ...],
+    }
+    Unknown model → window_tokens and max_utilization_pct are None; trend is empty.
+    """
+    model_norm = _normalize_model(model)
+    window = MODEL_WINDOWS.get(model_norm)
+    compactions = transcript.get("compactions", [])
+    compaction_count = len(compactions)
+
+    if window is None:
+        return {
+            "window_tokens": None,
+            "max_utilization_pct": None,
+            "compaction_count": compaction_count,
+            "utilization_trend": [],
+        }
+
+    compact_ts = sorted(c.get("timestamp") for c in compactions if c.get("timestamp"))
+    running = 0
+    max_load = 0
+    trend = []
+    next_compact_idx = 0
+    for entry in transcript.get("usage_per_message", []):
+        ts = entry.get("timestamp")
+        if next_compact_idx < len(compact_ts) and ts and ts >= compact_ts[next_compact_idx]:
+            running = 0  # post-compaction: context has been summarized
+            next_compact_idx += 1
+        u = entry.get("usage", {})
+        running += int(u.get("input_tokens", 0) or 0) + int(u.get("cache_read_input_tokens", 0) or 0)
+        max_load = max(max_load, running)
+        pct = round(running / window * 100, 2)
+        trend.append((ts, pct))
+
+    return {
+        "window_tokens": window,
+        "max_utilization_pct": round(max_load / window * 100, 2),
+        "compaction_count": compaction_count,
+        "utilization_trend": trend,
+    }

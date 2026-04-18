@@ -107,3 +107,23 @@ def test_compute_pacing_empty():
     assert pacing["inter_turn_p95_ms"] == 0
     assert pacing["idle_gaps_sec"] == []
     assert pacing["prompt_to_first_tool_ms"] == []
+
+
+def test_compute_context_pressure_known_model(tmp_path):
+    path = str(tmp_path / "t.jsonl")
+    make_synthetic_transcript(path, session_id="s", num_turns=5, compaction_at=2)
+    t = tp.parse_transcript(path)
+    pressure = tp.compute_context_pressure(t, model="claude-opus-4-7")
+    assert pressure["window_tokens"] == 200_000
+    assert pressure["compaction_count"] == 1
+    assert pressure["max_utilization_pct"] is not None
+    assert 0 <= pressure["max_utilization_pct"] <= 100
+
+
+def test_compute_context_pressure_unknown_model(tmp_path):
+    path = str(tmp_path / "t.jsonl")
+    make_synthetic_transcript(path, session_id="s", num_turns=2)
+    t = tp.parse_transcript(path)
+    pressure = tp.compute_context_pressure(t, model="claude-future-x-0")
+    assert pressure["window_tokens"] is None
+    assert pressure["max_utilization_pct"] is None
