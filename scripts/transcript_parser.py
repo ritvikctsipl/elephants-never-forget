@@ -125,3 +125,63 @@ def compute_usage_totals(transcript):
     denom = totals["cache_read"] + totals["input"]
     totals["cache_hit_rate"] = round(totals["cache_read"] / denom * 100, 2) if denom > 0 else 0.0
     return totals
+
+
+# Public pricing as of 2026-01 (USD per million tokens). Update when rates change.
+PRICING_TABLE_V1 = {
+    "claude-opus-4-7":    {"input": 15.00, "output": 75.00, "cache_read": 1.50,  "cache_creation": 18.75},
+    "claude-opus-4-6":    {"input": 15.00, "output": 75.00, "cache_read": 1.50,  "cache_creation": 18.75},
+    "claude-sonnet-4-6":  {"input":  3.00, "output": 15.00, "cache_read": 0.30,  "cache_creation":  3.75},
+    "claude-sonnet-4-5":  {"input":  3.00, "output": 15.00, "cache_read": 0.30,  "cache_creation":  3.75},
+    "claude-haiku-4-5":   {"input":  0.80, "output":  4.00, "cache_read": 0.08,  "cache_creation":  1.00},
+}
+_PRICING_AS_OF = "2026-01"
+
+
+def _normalize_model(model):
+    """Strip suffixes like '[1m]' and version-date suffixes; lowercase."""
+    if not model:
+        return None
+    m = model.lower().strip()
+    # Strip bracketed suffix: 'claude-opus-4-7[1m]' -> 'claude-opus-4-7'
+    if "[" in m:
+        m = m.split("[", 1)[0]
+    # Strip date suffix: 'claude-haiku-4-5-20251001' -> 'claude-haiku-4-5'
+    parts = m.rsplit("-", 1)
+    if len(parts) == 2 and parts[1].isdigit() and len(parts[1]) == 8:
+        m = parts[0]
+    return m
+
+
+def estimate_cost(usage, model=None):
+    """Compute estimated cost in USD from a usage dict and model identifier.
+
+    Returns {
+        "cost_usd": float | None,
+        "disclaimer": str,
+        "model": str | None,
+        "pricing_version": "v1",
+    }
+    Unknown model → cost_usd=None with explanation.
+    """
+    model_norm = _normalize_model(model)
+    pricing = PRICING_TABLE_V1.get(model_norm)
+    if not pricing:
+        return {
+            "cost_usd": None,
+            "disclaimer": f"Unknown model '{model}'. Cost cannot be estimated.",
+            "model": model,
+            "pricing_version": "v1",
+        }
+    cost = (
+        usage.get("input", 0)          * pricing["input"]         +
+        usage.get("output", 0)         * pricing["output"]        +
+        usage.get("cache_read", 0)     * pricing["cache_read"]    +
+        usage.get("cache_creation", 0) * pricing["cache_creation"]
+    ) / 1_000_000.0
+    return {
+        "cost_usd": round(cost, 4),
+        "disclaimer": f"Estimate based on public rates as of {_PRICING_AS_OF}; may drift.",
+        "model": model,
+        "pricing_version": "v1",
+    }

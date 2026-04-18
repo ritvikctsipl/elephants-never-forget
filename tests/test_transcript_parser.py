@@ -65,3 +65,26 @@ def test_compute_usage_totals_empty():
         "input": 0, "output": 0, "cache_read": 0, "cache_creation": 0,
         "total": 0, "cache_hit_rate": 0.0,
     }
+
+
+def test_estimate_cost_known_model():
+    usage = {"input": 1_000_000, "output": 1_000_000, "cache_read": 0, "cache_creation": 0}
+    result = tp.estimate_cost(usage, model="claude-opus-4-7")
+    assert result["cost_usd"] is not None
+    assert result["cost_usd"] > 0
+    assert result["model"] == "claude-opus-4-7"
+    assert result["pricing_version"] == "v1"
+    assert "rates as of" in result["disclaimer"]
+
+
+def test_estimate_cost_unknown_model():
+    usage = {"input": 1000, "output": 500, "cache_read": 0, "cache_creation": 0}
+    result = tp.estimate_cost(usage, model="claude-future-x-0")
+    assert result["cost_usd"] is None
+    assert "unknown model" in result["disclaimer"].lower()
+
+
+def test_estimate_cost_none_model():
+    usage = {"input": 1000, "output": 500, "cache_read": 0, "cache_creation": 0}
+    result = tp.estimate_cost(usage, model=None)
+    assert result["cost_usd"] is None
