@@ -32,3 +32,35 @@ def test_helpers_importable():
     assert callable(gate.session_file_exists_today)
     assert callable(gate.opt_out_marker_exists)
     assert callable(gate.sanitize_session_id)
+
+
+def test_user_prompt_submit_silent_when_session_file_exists(project_dir, sessions_dir):
+    today = __import__("datetime").datetime.now().strftime("%Y-%m-%d")
+    make_session_file(sessions_dir, today, "foo", session_id="s1")
+    result = run_gate(
+        {"hook_event_name": "UserPromptSubmit", "session_id": "s1", "prompt": "hi"},
+        project_dir=project_dir,
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == "", "should be silent when session file exists"
+
+
+def test_user_prompt_submit_silent_when_opt_out(project_dir, sessions_dir):
+    make_opt_out_marker(sessions_dir, "s1")
+    result = run_gate(
+        {"hook_event_name": "UserPromptSubmit", "session_id": "s1", "prompt": "hi"},
+        project_dir=project_dir,
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
+def test_user_prompt_submit_injects_reminder_when_no_session_file(project_dir, sessions_dir):
+    result = run_gate(
+        {"hook_event_name": "UserPromptSubmit", "session_id": "s1", "prompt": "hi"},
+        project_dir=project_dir,
+    )
+    assert result.returncode == 0
+    assert "<system-reminder>" in result.stdout
+    assert ".claude-sessions/sessions/" in result.stdout
+    assert "</system-reminder>" in result.stdout

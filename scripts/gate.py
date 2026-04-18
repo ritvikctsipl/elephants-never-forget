@@ -58,9 +58,57 @@ def log_gate_decision(session_id, event, decision, reason, sessions_dir):
         pass  # best-effort, never crash
 
 
+REMINDER_TEMPLATE = """<system-reminder>
+ELEPHANTS NEVER FORGET — SESSION GATE
+
+No session file exists for today ({today}). Before responding to this prompt,
+you MUST:
+
+1. Create `.claude-sessions/sessions/{today}-<slug>.md` where `<slug>` is a
+   2-5 word kebab-case summary of the session's intent. Slug rules: only
+   `[a-z0-9-]`, maximum 40 characters. Same-day collision? Append `-<first-4-chars-of-session-id>`.
+
+2. Write the required frontmatter (session_id, date, start_time, tags,
+   status: active, summary) and an `## Intent` section.
+
+3. Optionally create an empty marker at `.claude-sessions/.active/{session_id_prefix}`.
+
+If the user said "don't track this session", instead create an empty marker at
+`.claude-sessions/.opt-out/{session_id_prefix}` — that satisfies the gate.
+
+Until one of these files exists, PreToolUse will deny any tool call other than
+a Write into .claude-sessions/sessions/ or .claude-sessions/.opt-out/.
+</system-reminder>"""
+
+
+def handle_user_prompt_submit(input_data, sessions_dir):
+    session_id = input_data.get("session_id", "unknown")
+    if session_file_exists_today(sessions_dir):
+        return
+    if opt_out_marker_exists(session_id, sessions_dir):
+        return
+    sid_prefix = sanitize_session_id(session_id)[:8]
+    today = datetime.now().strftime("%Y-%m-%d")
+    print(REMINDER_TEMPLATE.format(today=today, session_id_prefix=sid_prefix))
+    log_gate_decision(session_id, "UserPromptSubmit", "reminder", "no_session_file", sessions_dir)
+
+
 def main():
-    # Handlers not yet implemented; they come in Task 4 and Task 5.
-    # Default: exit 0 (allow) on any invocation until handlers are added.
+    try:
+        input_data = json.load(sys.stdin)
+    except Exception:
+        sys.exit(0)  # fail-open on malformed input
+
+    event = input_data.get("hook_event_name", "")
+    sessions_dir = get_sessions_dir()
+
+    try:
+        if event == "UserPromptSubmit":
+            handle_user_prompt_submit(input_data, sessions_dir)
+        # PreToolUse handler added in Task 5
+    except Exception:
+        pass  # fail-open on any unexpected error
+
     sys.exit(0)
 
 
