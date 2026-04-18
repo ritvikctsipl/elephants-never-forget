@@ -105,3 +105,23 @@ def find_transcript_path(session_id, cwd=None):
     pattern = os.path.join(projects_root, "*", f"{session_id}.jsonl")
     matches = glob.glob(pattern)
     return matches[0] if matches else None
+
+
+def compute_usage_totals(transcript):
+    """Sum token usage across all assistant messages.
+
+    Returns dict with keys: input, output, cache_read, cache_creation, total, cache_hit_rate.
+    cache_hit_rate is cache_read / (cache_read + input), expressed as a percentage.
+    Empty transcript → all zeros.
+    """
+    totals = {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0}
+    for entry in transcript.get("usage_per_message", []):
+        u = entry.get("usage", {})
+        totals["input"] += int(u.get("input_tokens", 0) or 0)
+        totals["output"] += int(u.get("output_tokens", 0) or 0)
+        totals["cache_read"] += int(u.get("cache_read_input_tokens", 0) or 0)
+        totals["cache_creation"] += int(u.get("cache_creation_input_tokens", 0) or 0)
+    totals["total"] = sum(totals.values())
+    denom = totals["cache_read"] + totals["input"]
+    totals["cache_hit_rate"] = round(totals["cache_read"] / denom * 100, 2) if denom > 0 else 0.0
+    return totals
