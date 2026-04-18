@@ -93,11 +93,54 @@ def handle_user_prompt_submit(input_data, sessions_dir):
     log_gate_decision(session_id, "UserPromptSubmit", "reminder", "no_session_file", sessions_dir)
 
 
+DENY_REASON_TEMPLATE = (
+    "No session file exists for today ({today}). The Elephants Never Forget gate is "
+    "blocking this tool call. Create `.claude-sessions/sessions/{today}-<slug>.md` "
+    "first, OR create `.claude-sessions/.opt-out/{session_id_prefix}` to opt out of "
+    "tracking for this session."
+)
+
+
+def _is_write_under(tool_name, tool_input, *allowed_prefixes):
+    """True if tool_name is Write and tool_input['file_path'] is under any allowed prefix."""
+    if tool_name != "Write":
+        return False
+    fp = tool_input.get("file_path", "") if isinstance(tool_input, dict) else ""
+    fp_abs = os.path.abspath(fp) if fp else ""
+    for prefix in allowed_prefixes:
+        if fp_abs.startswith(os.path.abspath(prefix) + os.sep) or fp_abs == os.path.abspath(prefix):
+            return True
+    return False
+
+
+def handle_pretool_use(input_data, sessions_dir):
+    session_id = input_data.get("session_id", "unknown")
+    tool_name = input_data.get("tool_name", "")
+    tool_input = input_data.get("tool_input", {})
+
+    if session_file_exists_today(sessions_dir):
+        return  # allow
+    if opt_out_marker_exists(session_id, sessions_dir):
+        return  # allow
+
+    sessions_subdir = os.path.join(sessions_dir, "sessions")
+    opt_out_subdir = os.path.join(sessions_dir, ".opt-out")
+    if _is_write_under(tool_name, tool_input, sessions_subdir, opt_out_subdir):
+        return  # allow (creation tools)
+
+    sid_prefix = sanitize_session_id(session_id)[:8]
+    today = datetime.now().strftime("%Y-%m-%d")
+    reason = DENY_REASON_TEMPLATE.format(today=today, session_id_prefix=sid_prefix)
+    payload = {"decision": "deny", "reason": reason}
+    print(json.dumps(payload))
+    log_gate_decision(session_id, "PreToolUse", "deny", tool_name, sessions_dir)
+
+
 def main():
     try:
         input_data = json.load(sys.stdin)
     except Exception:
-        sys.exit(0)  # fail-open on malformed input
+        sys.exit(0)
 
     event = input_data.get("hook_event_name", "")
     sessions_dir = get_sessions_dir()
@@ -105,9 +148,10 @@ def main():
     try:
         if event == "UserPromptSubmit":
             handle_user_prompt_submit(input_data, sessions_dir)
-        # PreToolUse handler added in Task 5
+        elif event == "PreToolUse":
+            handle_pretool_use(input_data, sessions_dir)
     except Exception:
-        pass  # fail-open on any unexpected error
+        pass
 
     sys.exit(0)
 
