@@ -1,6 +1,6 @@
 ---
 name: elephants-never-forget
-description: Use when starting a new session, ending a session, making or reversing significant decisions, or when the user asks what was discussed or decided in previous sessions. Also use when a PreCompact warning appears or when resuming after an interrupted session.
+description: Use when starting a session, when a hard-gate denial blocks a tool, when making or reversing decisions, when resuming an interrupted session, when PreCompact fires, or when asked about prior sessions.
 ---
 
 # Elephants Never Forget
@@ -12,6 +12,40 @@ Cross-session memory system. Track what happened, what was decided, and what cha
 Hooks handle mechanical logging (prompts, tool use, timestamps). **Your job is the intelligent layer**: structured summaries, decision records, friction tracking, and progressive compression of older sessions.
 
 This skill complements (does not replace) Claude's built-in memory system. Use built-in memory for user preferences and quick facts. Use this system for structured session history, decision tracking, and analytical review.
+
+A **hard gate** (v1.1.0) enforces that today's session file exists before any non-creation tool call runs — see [The Gate](#the-gate) below.
+
+## Session Start Protocol
+
+Do these in order at the start of every session:
+
+1. **Read the injected context** at the top of the conversation. It includes the session index, standing decisions, and recent session notes.
+2. **Check whether today's session file exists.** Look for `.claude-sessions/sessions/YYYY-MM-DD-<slug>.md` using today's date.
+3. **If it does not exist, create it now** — before running any other tool. Slug rules: 2–5 word kebab-case summary of the session's intent, `[a-z0-9-]` only, max 40 chars. Same-day collision? Append `-<first-4-chars-of-session-id>`. Write the required frontmatter (session_id, date, start_time, tags, status: active, summary) and an `## Intent` section.
+4. **(Optional)** Create an empty marker at `.claude-sessions/.active/<session-id-prefix>`. This is a convention; not required by the gate.
+5. **If the user said "don't track this session"**, create an empty marker at `.claude-sessions/.opt-out/<session-id-prefix>` instead. That satisfies the gate and suppresses further updates.
+6. **Resume work** once the file (or opt-out marker) exists.
+
+If `.claude-sessions/` is empty (first-ever session), also create `index.md`, `decisions.md`, and `topics.md` — see [First Session Initialization](#first-session-initialization).
+
+## The Gate
+
+The v1.1.0 hard gate runs on `UserPromptSubmit` and `PreToolUse` hooks. Its rules:
+
+- **When `.claude-sessions/sessions/YYYY-MM-DD-*.md` exists for today** → silent allow. No output, no overhead.
+- **When the user has opted out** (`.claude-sessions/.opt-out/<session-id>` exists) → silent allow.
+- **When neither exists and you submit a prompt** → a `<system-reminder>` is injected into your context telling you to create the session file.
+- **When neither exists and you call a tool** → the gate returns `{"decision": "deny", "reason": "…"}`, blocking the tool. Exception: `Write` to a path under `.claude-sessions/sessions/` or `.claude-sessions/.opt-out/` is allowed, so you can create the session file or opt-out marker without the gate blocking that creation itself.
+
+**How to satisfy the gate:** Create today's session file (Session Start Protocol step 3) OR create an opt-out marker. Both are `Write` operations under `.claude-sessions/`, which the gate allows even before a session file exists.
+
+**Denial shape (what you will see blocked):**
+
+```json
+{"decision": "deny", "reason": "No session file exists for today (YYYY-MM-DD). The Elephants Never Forget gate is blocking this tool call. Create `.claude-sessions/sessions/YYYY-MM-DD-<slug>.md` first, OR create `.claude-sessions/.opt-out/<session-id-prefix>` to opt out of tracking for this session."}
+```
+
+**Fail-open guarantee:** If the gate script itself errors (malformed stdin, filesystem hiccup, import failure), it exits 0 silently — it never blocks a user by accident.
 
 ## File Structure
 
@@ -25,23 +59,24 @@ This skill complements (does not replace) Claude's built-in memory system. Use b
     YYYY-MM-DD-topic.md # Per-session detailed file
   raw/
     <session-id>.jsonl  # Mechanical event log (hook-written)
+  .active/              # Optional active-session markers
+  .opt-out/             # Opt-out markers (satisfies the gate)
 ```
 
 ## Session Lifecycle
 
-1. **Start**: Previous sessions? Read injected context. First time? Create `index.md`, `decisions.md`, `topics.md`.
-2. **Create session file**: `sessions/YYYY-MM-DD-topic-slug.md`
-3. **Work**: Every 5-10 interactions, update session file. On significant decisions, write Y-statement to both session file and `decisions.md`.
-4. **End**: Write anchored summary, update `index.md` + `topics.md`, set status: completed.
-5. **Compress**: If older sessions exist beyond tier thresholds, compress one tier (oldest first).
+1. **Start**: Follow the [Session Start Protocol](#session-start-protocol).
+2. **Work**: Every 5–10 interactions, update session file. On significant decisions, write Y-statement to both session file and `decisions.md`.
+3. **End**: Write anchored summary, update `index.md` + `topics.md`, set status: completed.
+4. **Compress**: If older sessions exist beyond tier thresholds, compress one tier (oldest first).
 
 ## Opt-Out
 
-If the user says "don't track this session" or similar, skip all session file creation and updates. Hooks will still write to `raw/` and `log.md` (mechanical logging cannot be suppressed from the skill layer), but you should not create or update any files in `sessions/`, `index.md`, `topics.md`, or `decisions.md`.
+If the user says "don't track this session" or similar, create `.claude-sessions/.opt-out/<session-id-prefix>` (empty file) to satisfy the gate, then skip all session file creation and updates. Hooks will still write to `raw/` and `log.md` (mechanical logging cannot be suppressed from the skill layer), but you should not create or update any files in `sessions/`, `index.md`, `topics.md`, or `decisions.md`.
 
 ## When to Update Session Files
 
-Update at **natural breakpoints** — aim for roughly **every 5-10 significant interactions**, not after every single tool call. Concrete triggers:
+Update at **natural breakpoints** — aim for roughly **every 5–10 significant interactions**, not after every single tool call. Concrete triggers:
 
 - After completing a task or meaningful subtask
 - After making or reversing a decision
@@ -67,7 +102,7 @@ A decision is significant if it would affect future sessions or is worth remembe
 
 **File naming rules:**
 - `YYYY-MM-DD` — today's date
-- `topic-slug` — 2-5 word kebab-case summary derived from the session's primary goal. Max 40 chars for the slug.
+- `topic-slug` — 2–5 word kebab-case summary derived from the session's primary goal. Max 40 chars for the slug.
 - Only use `[a-z0-9-]` in the slug. No spaces, underscores, or special characters.
 - **Same-day collision**: Append session ID prefix: `2026-04-13-api-refactor-a1b2.md`
 
@@ -205,7 +240,7 @@ Three tiers based on age:
 | Tier | Age | What stays | What compresses |
 |------|-----|-----------|----------------|
 | **Hot** | Current + last 3 sessions | Full detail | Nothing |
-| **Warm** | 4-30 days | Anchored summary (below) | Interactions, friction details |
+| **Warm** | 4–30 days | Anchored summary (below) | Interactions, friction details |
 | **Cold** | 30+ days | Frontmatter + summary only. Decisions survive in decisions.md | Everything else removed |
 
 **Anchored summary format** (warm tier — replaces full body):
@@ -242,23 +277,31 @@ For very long sessions, keep the Interactions section manageable:
 - Cap Interactions at ~20 entries; fold older ones into a "## Summary of Earlier Work" section
 - Files Touched and Decisions sections have no cap — always keep these complete
 
+## Red Flags
+
+| Thought | Reality |
+|---------|---------|
+| "I'll just read the file first, then create the session log" | Gate will deny the Read. Create the session file first. |
+| "This is a quick task; skip logging" | Quick tasks still benefit from the record. Make the file; keep it short. |
+| "The SessionStart hook already captured things" | Hooks capture events. The skill captures *meaning* (intent, decisions). |
+| "I'll batch updates at the end" | PreCompact can fire sooner than expected. Update at natural breakpoints. |
+
 ## Quick Reference
 
 | Action | What to do |
 |--------|-----------|
-| Session starts (first ever) | Create `index.md`, `decisions.md`, `topics.md`, and session file |
-| Session starts (has history) | Read injected context. Create session file |
 | User makes decision | Write Y-statement to session file AND decisions.md |
 | Decision reversed | New entry in decisions.md, strikethrough old, log in Reversals |
 | Error resolved | Log in Errors & Fixes with exact error message |
 | User redirects approach | Log in Friction Events |
-| Every 5-10 interactions | Update session file |
+| Every 5–10 interactions | Update session file |
 | PreCompact warning appears | Immediately update session file |
 | Session ends | Write anchored summary, update index.md + topics.md, set status: completed |
 | Old sessions exist | Compress per tier thresholds, oldest first, one tier per session start |
-| User asks about past work | Check decisions.md -> index.md -> topics.md -> session file -> raw/ |
-| User says "don't track" | Skip all session file operations for this session |
+| User asks about past work | Check decisions.md → index.md → topics.md → session file → raw/ |
+| User says "don't track" | Create `.opt-out/<session-id-prefix>` marker; skip session file operations |
 | Previous session left active | Resume it instead of creating new file |
+| Gate blocks a tool call | Create today's session file (or opt-out marker), then retry |
 
 ## Common Mistakes
 
@@ -269,3 +312,4 @@ For very long sessions, keep the Interactions section manageable:
 - **Writing to `raw/` or `log.md`**: The hooks handle those. You handle `sessions/`, `index.md`, `topics.md`, `decisions.md`.
 - **Creating slug with special characters**: Slugs must be `[a-z0-9-]` only. Sanitize non-ASCII and special chars.
 - **Updating after every tool call**: Wait for natural breakpoints. Minimum 3 interactions between updates.
+- **Trying to read/edit before creating the session file**: The gate denies non-creation tools until the file exists. Create it first.
