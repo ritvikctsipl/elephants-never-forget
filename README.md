@@ -77,6 +77,16 @@ The plugin creates a `.claude-sessions/` directory in each project:
   - **Warm** (4-30 days): Anchored summary (intent, changes, decisions, next steps)
   - **Cold** (30+ days): Frontmatter + summary only; decisions preserved in decisions.md
 
+### The Gate (v1.1.0)
+
+Two hooks — `UserPromptSubmit` and `PreToolUse` — enforce session-file creation:
+
+- On each prompt, if today's session file is missing, a `<system-reminder>` block is injected telling Claude to create it first.
+- On each tool call, if neither a session file for today nor an opt-out marker exists, Claude's tool calls are denied *unless* the tool is a `Write` into `.claude-sessions/sessions/` or `.claude-sessions/.opt-out/` (the creation path).
+- **Opt-out:** create an empty marker at `.claude-sessions/.opt-out/<session-id>` and the gate will be silent for that session.
+- **Fail-open:** any filesystem or parsing error in the gate defaults to *allow*. The gate can never brick a session.
+- **Hot-path cost:** ~1ms per invocation once today's session file exists (single filesystem glob).
+
 ## Analytics Dashboard
 
 The plugin includes an analytics system that helps you understand your collaboration patterns.
@@ -103,11 +113,15 @@ This generates a self-contained HTML dashboard with Chart.js visualizations.
 
 | Category | What it measures |
 |----------|-----------------|
-| **Planning** | Decision reversal rate, stability (survive >7 days), confidence distribution |
+| **Planning** | Decision reversal rate, stability (>7 days), confidence distribution |
 | **Clarity** | Friction events, redirects per session, prompt frequency |
 | **Efficiency** | Completion rate, open items backlog, session focus |
+| **Tokens** *(v1.1.0)* | Input/output/cache token totals, cache hit rate |
+| **Cost** *(v1.1.0)* | Estimated USD per session (from current Opus/Sonnet/Haiku rates) |
+| **Context pressure** *(v1.1.0)* | Peak utilization %, compaction count per session |
+| **Pacing** *(v1.1.0)* | Inter-turn latency, idle gaps, prompt→first-tool latency |
 | **Patterns** | Topic distribution, recurring errors, active days, tool usage |
-| **Insights** | Actionable recommendations based on your patterns |
+| **Insights** | Actionable recommendations |
 
 ## Requirements
 
