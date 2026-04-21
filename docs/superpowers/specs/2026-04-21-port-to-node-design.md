@@ -277,7 +277,7 @@ Preserve all other fields: `matcher`, `timeout`, event structure, hook ordering 
 |---|---|---|
 | `tests/helpers.js` | `tests/helpers.py` | Builders: `makeSessionFile`, `makeOptOutMarker`, `makeActiveMarker`, `makeSyntheticTranscript`. Plus a `makeSessionsDir(tmp)` factory that replaces the pytest `sessions_dir` fixture. |
 | `tests/gate.test.js` | `tests/test_gate.py` | 10 tests: helper importability, silent-when-session-exists, silent-when-opt-out, reminder-when-no-file, pretool allow/deny cases, pretool allows write to sessions dir, pretool allows write to opt-out dir, deny Read, deny Bash, malformed-stdin fails open. |
-| `tests/transcript_parser.test.js` | `tests/test_transcript_parser.py` | 12 tests: parse missing file, parse well-formed, skip malformed lines, find_path returns null, usage totals basic, usage totals empty, estimate_cost known model, estimate_cost unknown model, estimate_cost null model, compute_pacing basic, compute_pacing empty, compute_context_pressure known + unknown model. |
+| `tests/transcript_parser.test.js` | `tests/test_transcript_parser.py` | 13 tests: parse missing file, parse well-formed, skip malformed lines, find_path returns null, usage totals basic, usage totals empty, estimate_cost known model, estimate_cost unknown model, estimate_cost null model, compute_pacing basic, compute_pacing empty, compute_context_pressure known model, compute_context_pressure unknown model. |
 | `tests/analytics_integration.test.js` | `tests/test_analytics_integration.py` | 2 tests: no transcripts present, transcript merge when present. |
 
 ### 6.3 Fixture replacement
@@ -398,7 +398,7 @@ Python baseline for `gate.py` is ~8ms cold on macOS; Node cold-start is comparab
 
 ## 12. Acceptance criteria
 
-1. `node --test tests/` passes all ported tests (24 tests total)
+1. `node --test tests/` passes all ported tests (26 tests total: 13 transcript_parser + 11 gate + 2 analytics_integration)
 2. No `.py` files remain in `scripts/` or `tests/` (docs may reference Python historically)
 3. `hooks/hooks.json` uses `node` in every `command`; no `"async"` field present
 4. `.claude-plugin/plugin.json` and `marketplace.json` both at version `2.0.0`
