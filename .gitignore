@@ -4,3 +4,5 @@ __pycache__/
 *.log
 dashboard.html
 .pytest_cache/
+.worktrees/
+node_modules/
