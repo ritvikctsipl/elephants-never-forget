@@ -105,7 +105,7 @@ Ask Claude to show your analytics, or use the `session-analytics` skill. You'll 
 ### Full dashboard (in browser)
 For interactive charts, run:
 ```bash
-python scripts/dashboard.py --project-dir .
+node scripts/dashboard.js --project-dir .
 ```
 This generates a self-contained HTML dashboard with Chart.js visualizations.
 
@@ -125,8 +125,10 @@ This generates a self-contained HTML dashboard with Chart.js visualizations.
 
 ## Requirements
 
-- Python 3.8+
+- Node.js 22+ (LTS)
 - Claude Code CLI
+
+> **Note:** If you installed Claude Code via the native installer (macOS installer or `curl`), you may need to install Node.js separately. If you installed via `npm install -g @anthropic-ai/claude-code`, Node is already present. Node 22 is the current Active LTS; Node 24 also works.
 
 **Important:** Add `.claude-sessions/` to your project's `.gitignore` to avoid committing session data (which may contain prompts and error messages).
 
