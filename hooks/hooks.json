@@ -6,12 +6,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/session_logger.py\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session_logger.js\"",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/inject_context.py\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/inject_context.js\"",
             "timeout": 10
           }
         ]
@@ -22,13 +22,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/session_logger.py\"",
-            "timeout": 10,
-            "async": true
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session_logger.js\"",
+            "timeout": 10
           },
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/gate.py\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/gate.js\"",
             "timeout": 5
           }
         ]
@@ -40,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/gate.py\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/gate.js\"",
             "timeout": 5
           }
         ]
@@ -52,9 +51,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/session_logger.py\"",
-            "timeout": 10,
-            "async": true
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session_logger.js\"",
+            "timeout": 10
           }
         ]
       }
@@ -64,7 +62,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/session_logger.py\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session_logger.js\"",
             "timeout": 10
           }
         ]
@@ -75,7 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/pre_compact_warn.py\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pre_compact_warn.js\"",
             "timeout": 10
           }
         ]
@@ -86,7 +84,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/scripts/session_logger.py\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session_logger.js\"",
             "timeout": 10
           }
         ]
