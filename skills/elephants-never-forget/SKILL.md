@@ -13,15 +13,15 @@ Hooks handle mechanical logging (prompts, tool use, timestamps). **Your job is t
 
 This skill complements (does not replace) Claude's built-in memory system. Use built-in memory for user preferences and quick facts. Use this system for structured session history, decision tracking, and analytical review.
 
-A **hard gate** (v1.1.0) enforces that today's session file exists before any non-creation tool call runs — see [The Gate](#the-gate) below.
+A **hard gate** enforces that *this session's* file exists before any non-creation tool call runs — see [The Gate](#the-gate) below. Another session's file dated today does not satisfy the gate; matching is done by the `session_id` frontmatter field.
 
 ## Session Start Protocol
 
 Do these in order at the start of every session:
 
 1. **Read the injected context** at the top of the conversation. It includes the session index, standing decisions, and recent session notes.
-2. **Check whether today's session file exists.** Look for `.claude-sessions/sessions/YYYY-MM-DD-<slug>.md` using today's date.
-3. **If it does not exist, create it now** — before running any other tool. Slug rules: 2–5 word kebab-case summary of the session's intent, `[a-z0-9-]` only, max 40 chars. Same-day collision? Append `-<first-4-chars-of-session-id>`. Write the required frontmatter (session_id, date, start_time, tags, status: active, summary) and an `## Intent` section.
+2. **Check whether THIS session's file exists for today.** Look for `.claude-sessions/sessions/YYYY-MM-DD-<slug>.md` whose frontmatter `session_id` matches the current session's id (first 8 chars). Another session's file dated today does NOT count.
+3. **If it does not exist, create it now** — before running any other tool. Slug rules: 2–5 word kebab-case summary of the session's intent, `[a-z0-9-]` only, max 40 chars. Same-day collision? Append `-<first-4-chars-of-session-id>`. Write the required frontmatter — `session_id` MUST be this session's id (first 8 chars) — plus date, start_time, tags, status: active, summary, and an `## Intent` section.
 4. **(Optional)** Create an empty marker at `.claude-sessions/.active/<session-id-prefix>`. This is a convention; not required by the gate.
 5. **If the user said "don't track this session"**, create an empty marker at `.claude-sessions/.opt-out/<session-id-prefix>` instead. That satisfies the gate and suppresses further updates.
 6. **Resume work** once the file (or opt-out marker) exists.
@@ -30,22 +30,24 @@ If `.claude-sessions/` is empty (first-ever session), also create `index.md`, `d
 
 ## The Gate
 
-The v1.1.0 hard gate runs on `UserPromptSubmit` and `PreToolUse` hooks. Its rules:
+The hard gate runs on `UserPromptSubmit` and `PreToolUse` hooks. Its rules:
 
-- **When `.claude-sessions/sessions/YYYY-MM-DD-*.md` exists for today** → silent allow. No output, no overhead.
+- **When a session file dated today (or yesterday, for cross-midnight resume) contains frontmatter `session_id` matching the current session's id** → silent allow. No output, no overhead.
 - **When the user has opted out** (`.claude-sessions/.opt-out/<session-id>` exists) → silent allow.
-- **When neither exists and you submit a prompt** → a `<system-reminder>` is injected into your context telling you to create the session file.
-- **When neither exists and you call a tool** → the gate returns `{"decision": "deny", "reason": "…"}`, blocking the tool. Exception: `Write` to a path under `.claude-sessions/sessions/` or `.claude-sessions/.opt-out/` is allowed, so you can create the session file or opt-out marker without the gate blocking that creation itself.
+- **When neither matches and you submit a prompt** → a `<system-reminder>` is injected into your context telling you to create *your* session file. Another session's file dated today does NOT satisfy the gate.
+- **When neither matches and you call a tool** → the gate returns `{"decision": "deny", "reason": "…"}`, blocking the tool. Exception: `Write` to a path under `.claude-sessions/sessions/` or `.claude-sessions/.opt-out/` is allowed, so you can create the session file or opt-out marker without the gate blocking that creation itself.
 
-**How to satisfy the gate:** Create today's session file (Session Start Protocol step 3) OR create an opt-out marker. Both are `Write` operations under `.claude-sessions/`, which the gate allows even before a session file exists.
+**How matching works:** The gate scans `.md` files under `sessions/` whose filename starts with today's or yesterday's date prefix, parses each file's YAML frontmatter, and checks whether `session_id` (first 8 chars) equals the current session's id (first 8 chars). The yesterday window covers sessions that crossed midnight.
+
+**How to satisfy the gate:** Create your session's file (Session Start Protocol step 3) with `session_id: <your-8-char-prefix>` in the frontmatter, OR create an opt-out marker at `.claude-sessions/.opt-out/<your-8-char-prefix>`. Both are `Write` operations under `.claude-sessions/`, which the gate allows even before any session file exists.
 
 **Denial shape (what you will see blocked):**
 
 ```json
-{"decision": "deny", "reason": "No session file exists for today (YYYY-MM-DD). The Elephants Never Forget gate is blocking this tool call. Create `.claude-sessions/sessions/YYYY-MM-DD-<slug>.md` first, OR create `.claude-sessions/.opt-out/<session-id-prefix>` to opt out of tracking for this session."}
+{"decision": "deny", "reason": "No session file exists for THIS session (id <prefix>) on YYYY-MM-DD. Another session's file dated today does NOT satisfy the Elephants Never Forget gate. Create `.claude-sessions/sessions/YYYY-MM-DD-<slug>.md` with frontmatter `session_id: <prefix>`, OR create `.claude-sessions/.opt-out/<prefix>` to opt out of tracking for this session."}
 ```
 
-**Fail-open guarantee:** If the gate script itself errors (malformed stdin, filesystem hiccup, import failure), it exits 0 silently — it never blocks a user by accident.
+**Fail-open guarantee:** If the gate script itself errors (malformed stdin, filesystem hiccup, import failure), it exits 0 silently — it never blocks a user by accident. Likewise, files with missing or malformed frontmatter are skipped (treated as non-matching) rather than crashing the gate.
 
 ## File Structure
 

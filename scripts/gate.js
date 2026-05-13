@@ -4,7 +4,7 @@
  * Runs on UserPromptSubmit and PreToolUse. Fails open on any error (default allow).
  * Hot-path target: <10ms per invocation when today's session file exists.
  */
-import { readdirSync, mkdirSync, appendFileSync, existsSync, realpathSync } from 'node:fs';
+import { readdirSync, readFileSync, mkdirSync, appendFileSync, existsSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, resolve, sep } from 'node:path';
 
@@ -18,19 +18,50 @@ function getSessionsDir() {
   return join(projectDir, '.claude-sessions');
 }
 
-function todayStr() {
+function dateNDaysAgoStr(n) {
   const d = new Date();
+  d.setDate(d.getDate() - n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export function sessionFileExistsToday(sessionsDir) {
-  const prefix = `${todayStr()}-`;
+function todayStr() {
+  return dateNDaysAgoStr(0);
+}
+
+function parseSessionIdFromFile(filepath) {
   try {
-    const files = readdirSync(join(sessionsDir, 'sessions'));
-    return files.some((f) => f.startsWith(prefix) && f.endsWith('.md'));
+    const content = readFileSync(filepath, 'utf8');
+    if (!content.startsWith('---\n')) return null;
+    const fmEnd = content.indexOf('\n---', 4);
+    if (fmEnd === -1) return null;
+    const fm = content.slice(4, fmEnd);
+    const m = fm.match(/^session_id:\s*([a-zA-Z0-9-]+)\s*$/m);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+export function sessionFileExistsForSession(sessionsDir, sessionId) {
+  const sid8 = sanitizeSessionId(sessionId).slice(0, 8);
+  if (!sid8 || sid8 === 'unknown') return false;
+  const sessionsSub = join(sessionsDir, 'sessions');
+  let files;
+  try {
+    files = readdirSync(sessionsSub);
   } catch {
     return false;
   }
+  // Scan today + yesterday to cover cross-midnight resume; bounded for hot-path.
+  const today = todayStr();
+  const yesterday = dateNDaysAgoStr(1);
+  for (const f of files) {
+    if (!f.endsWith('.md')) continue;
+    if (!(f.startsWith(`${today}-`) || f.startsWith(`${yesterday}-`))) continue;
+    const fileSid = parseSessionIdFromFile(join(sessionsSub, f));
+    if (fileSid && fileSid.slice(0, 8) === sid8) return true;
+  }
+  return false;
 }
 
 export function optOutMarkerExists(sessionId, sessionsDir) {
@@ -62,38 +93,42 @@ function reminderTemplate(today, sessionIdPrefix) {
   return `<system-reminder>
 ELEPHANTS NEVER FORGET — SESSION GATE
 
-No session file exists for today (${today}). Before responding to this prompt,
-you MUST:
+No session file exists for THIS session (id ${sessionIdPrefix}) on ${today}. Another
+session's file dated today does NOT satisfy the gate — every Claude Code session
+needs its own file with matching \`session_id\` in the frontmatter. Before
+responding to this prompt, you MUST:
 
 1. Create \`.claude-sessions/sessions/${today}-<slug>.md\` where \`<slug>\` is a
    2-5 word kebab-case summary of the session's intent. Slug rules: only
    \`[a-z0-9-]\`, maximum 40 characters. Same-day collision? Append \`-<first-4-chars-of-session-id>\`.
 
-2. Write the required frontmatter (session_id, date, start_time, tags,
-   status: active, summary) and an \`## Intent\` section.
+2. Write the required frontmatter — \`session_id: ${sessionIdPrefix}\` MUST match
+   this session — plus date, start_time, tags, status: active, summary, and an
+   \`## Intent\` section.
 
 3. Optionally create an empty marker at \`.claude-sessions/.active/${sessionIdPrefix}\`.
 
 If the user said "don't track this session", instead create an empty marker at
 \`.claude-sessions/.opt-out/${sessionIdPrefix}\` — that satisfies the gate.
 
-Until one of these files exists, PreToolUse will deny any tool call other than
-a Write into .claude-sessions/sessions/ or .claude-sessions/.opt-out/.
+Until your session file (or opt-out marker) exists, PreToolUse will deny any tool
+call other than a Write into .claude-sessions/sessions/ or .claude-sessions/.opt-out/.
 </system-reminder>`;
 }
 
 function denyReason(today, sessionIdPrefix) {
   return (
-    `No session file exists for today (${today}). The Elephants Never Forget gate is ` +
-    `blocking this tool call. Create \`.claude-sessions/sessions/${today}-<slug>.md\` ` +
-    `first, OR create \`.claude-sessions/.opt-out/${sessionIdPrefix}\` to opt out of ` +
-    `tracking for this session.`
+    `No session file exists for THIS session (id ${sessionIdPrefix}) on ${today}. ` +
+    `Another session's file dated today does NOT satisfy the Elephants Never Forget ` +
+    `gate. Create \`.claude-sessions/sessions/${today}-<slug>.md\` with frontmatter ` +
+    `\`session_id: ${sessionIdPrefix}\`, OR create \`.claude-sessions/.opt-out/${sessionIdPrefix}\` ` +
+    `to opt out of tracking for this session.`
   );
 }
 
 function handleUserPromptSubmit(input, sessionsDir) {
   const sessionId = input.session_id || 'unknown';
-  if (sessionFileExistsToday(sessionsDir)) return;
+  if (sessionFileExistsForSession(sessionsDir, sessionId)) return;
   if (optOutMarkerExists(sessionId, sessionsDir)) return;
   const sidPrefix = sanitizeSessionId(sessionId).slice(0, 8);
   const today = todayStr();
@@ -118,7 +153,7 @@ function handlePreToolUse(input, sessionsDir) {
   const toolName = input.tool_name || '';
   const toolInput = input.tool_input || {};
 
-  if (sessionFileExistsToday(sessionsDir)) return;
+  if (sessionFileExistsForSession(sessionsDir, sessionId)) return;
   if (optOutMarkerExists(sessionId, sessionsDir)) return;
 
   const sessionsSub = join(sessionsDir, 'sessions');
