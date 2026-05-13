@@ -88,6 +88,8 @@ Update at **natural breakpoints** — aim for roughly **every 5–10 significant
 - **Maximum gap**: If 10+ interactions have passed without an update, update now
 - **Minimum gap**: Never update more than once per 3 interactions (avoid noise)
 
+A `<system-reminder>` (the *heartbeat*) will be injected into your context when 5+ user prompts have been submitted since the session file was last touched. This is a soft reminder, not a deny — but treat it as a strong signal to update the session file before responding to the user.
+
 ## What Counts as a "Significant Decision"
 
 A decision is significant if it would affect future sessions or is worth remembering:

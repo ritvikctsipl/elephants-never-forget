@@ -48,6 +48,16 @@ export function makeActiveMarker(sessionsDir, sessionId) {
   return path;
 }
 
+export function makeRawJsonl(sessionsDir, sessionId, events) {
+  const sanitized = String(sessionId).replace(/[^a-zA-Z0-9-]/g, '') || 'unknown';
+  const dir = join(sessionsDir, 'raw');
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, `${sanitized}.jsonl`);
+  const lines = events.map((e) => (typeof e === 'string' ? e : JSON.stringify(e)));
+  writeFileSync(path, lines.join('\n') + '\n', 'utf8');
+  return path;
+}
+
 export function makeSyntheticTranscript(path, {
   sessionId,
   numTurns = 5,

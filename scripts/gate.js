@@ -4,9 +4,12 @@
  * Runs on UserPromptSubmit and PreToolUse. Fails open on any error (default allow).
  * Hot-path target: <10ms per invocation when today's session file exists.
  */
-import { readdirSync, readFileSync, mkdirSync, appendFileSync, existsSync, realpathSync } from 'node:fs';
+import { readdirSync, readFileSync, mkdirSync, appendFileSync, existsSync, realpathSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, resolve, sep } from 'node:path';
+
+const HEARTBEAT_THRESHOLD = 5;
+const HEARTBEAT_COUNT_CAP = HEARTBEAT_THRESHOLD + 1;
 
 export function sanitizeSessionId(sid) {
   const cleaned = String(sid || '').replace(/[^a-zA-Z0-9-]/g, '');
@@ -42,15 +45,15 @@ function parseSessionIdFromFile(filepath) {
   }
 }
 
-export function sessionFileExistsForSession(sessionsDir, sessionId) {
+function findSessionFileForSession(sessionsDir, sessionId) {
   const sid8 = sanitizeSessionId(sessionId).slice(0, 8);
-  if (!sid8 || sid8 === 'unknown') return false;
+  if (!sid8 || sid8 === 'unknown') return null;
   const sessionsSub = join(sessionsDir, 'sessions');
   let files;
   try {
     files = readdirSync(sessionsSub);
   } catch {
-    return false;
+    return null;
   }
   // Scan today + yesterday to cover cross-midnight resume; bounded for hot-path.
   const today = todayStr();
@@ -58,10 +61,57 @@ export function sessionFileExistsForSession(sessionsDir, sessionId) {
   for (const f of files) {
     if (!f.endsWith('.md')) continue;
     if (!(f.startsWith(`${today}-`) || f.startsWith(`${yesterday}-`))) continue;
-    const fileSid = parseSessionIdFromFile(join(sessionsSub, f));
-    if (fileSid && fileSid.slice(0, 8) === sid8) return true;
+    const path = join(sessionsSub, f);
+    const fileSid = parseSessionIdFromFile(path);
+    if (fileSid && fileSid.slice(0, 8) === sid8) return { path, fname: f };
   }
-  return false;
+  return null;
+}
+
+export function sessionFileExistsForSession(sessionsDir, sessionId) {
+  return findSessionFileForSession(sessionsDir, sessionId) != null;
+}
+
+function getSessionFileMtimeMs(filepath) {
+  try { return statSync(filepath).mtimeMs; }
+  catch { return null; }
+}
+
+function countUserPromptsSince(jsonlPath, sinceMs, cap) {
+  let content;
+  try { content = readFileSync(jsonlPath, 'utf8'); } catch { return 0; }
+  let count = 0;
+  for (const line of content.split('\n')) {
+    if (!line) continue;
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (entry.event !== 'user_prompt') continue;
+    const ts = Date.parse(entry.timestamp);
+    if (Number.isNaN(ts)) continue;
+    if (ts > sinceMs) {
+      count++;
+      if (count >= cap) return count;
+    }
+  }
+  return count;
+}
+
+function heartbeatTemplate(filename, count) {
+  return `<system-reminder>
+ELEPHANTS NEVER FORGET — HEARTBEAT
+
+Your session file (.claude-sessions/sessions/${filename}) has not been updated
+in ${count} user prompts. Per the elephants-never-forget skill, you should
+update the session log every 5–10 interactions at natural breakpoints.
+
+Take a moment now to:
+- Append recent significant interactions to the Interactions section (not every
+  tool call — only ones a future session would care about)
+- Capture decisions made (Y-statements; also append to decisions.md if standing)
+- Add to Files Touched, Errors & Fixes, Friction Events as applicable
+
+This is advisory, not a deny. Continue with the user's request after updating.
+</system-reminder>`;
 }
 
 export function optOutMarkerExists(sessionId, sessionsDir) {
@@ -128,7 +178,23 @@ function denyReason(today, sessionIdPrefix) {
 
 function handleUserPromptSubmit(input, sessionsDir) {
   const sessionId = input.session_id || 'unknown';
-  if (sessionFileExistsForSession(sessionsDir, sessionId)) return;
+  const match = findSessionFileForSession(sessionsDir, sessionId);
+  if (match) {
+    try {
+      const mtimeMs = getSessionFileMtimeMs(match.path);
+      if (mtimeMs == null) return;
+      const sid = sanitizeSessionId(sessionId);
+      const jsonlPath = join(sessionsDir, 'raw', `${sid}.jsonl`);
+      const count = countUserPromptsSince(jsonlPath, mtimeMs, HEARTBEAT_COUNT_CAP);
+      if (count >= HEARTBEAT_THRESHOLD) {
+        process.stdout.write(heartbeatTemplate(match.fname, count) + '\n');
+        logGateDecision(sessionId, 'UserPromptSubmit', 'heartbeat', `stale:${count}`, sessionsDir);
+      }
+    } catch {
+      // fail-open: any heartbeat error must not surface to the user
+    }
+    return;
+  }
   if (optOutMarkerExists(sessionId, sessionsDir)) return;
   const sidPrefix = sanitizeSessionId(sessionId).slice(0, 8);
   const today = todayStr();

@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, utimesSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { setupProjectDir, makeSessionFile, makeOptOutMarker } from './helpers.js';
+import { setupProjectDir, makeSessionFile, makeOptOutMarker, makeRawJsonl } from './helpers.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = resolve(__dirname, '..', 'scripts', 'gate.js');
@@ -240,5 +240,163 @@ test('sessionFileExistsForSession matches by 8-char prefix of session_id', async
     assert.equal(mod.sessionFileExistsForSession(sessionsDir, 'wxyz9999'), false);
     // 'unknown' (sanitized fallback) never matches.
     assert.equal(mod.sessionFileExistsForSession(sessionsDir, ''), false);
+  } finally { cleanup(); }
+});
+
+function backdate(filePath, secondsAgo) {
+  const t = new Date(Date.now() - secondsAgo * 1000);
+  utimesSync(filePath, t, t);
+}
+
+function eventsSince(sessionId, count, spreadSecondsAgo) {
+  // Generates `count` user_prompt events with timestamps spread across the last
+  // `spreadSecondsAgo` seconds (all in the past, all > a session-file mtime
+  // backdated to before that window).
+  const now = Date.now();
+  const events = [];
+  for (let i = 0; i < count; i++) {
+    const offsetMs = ((spreadSecondsAgo * 1000) * (count - i)) / (count + 1);
+    events.push({
+      timestamp: new Date(now - offsetMs).toISOString(),
+      event: 'user_prompt',
+      session_id: sessionId,
+      prompt: `p${i}`,
+    });
+  }
+  return events;
+}
+
+test('heartbeat: no reminder when fresh (1 prompt since mtime)', () => {
+  const { projectDir, sessionsDir, cleanup } = setupProjectDir();
+  try {
+    makeSessionFile(sessionsDir, today(), 'fresh', { sessionId: 's1' });
+    makeRawJsonl(sessionsDir, 's1', eventsSince('s1', 1, 1));
+    const r = runGate(
+      { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hi' },
+      projectDir
+    );
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout.trim(), '');
+  } finally { cleanup(); }
+});
+
+test('heartbeat: reminder fires at 5-prompt threshold', () => {
+  const { projectDir, sessionsDir, cleanup } = setupProjectDir();
+  try {
+    const filePath = makeSessionFile(sessionsDir, today(), 'stale-five', { sessionId: 's1' });
+    backdate(filePath, 3600);
+    makeRawJsonl(sessionsDir, 's1', eventsSince('s1', 5, 1800));
+    const r = runGate(
+      { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hi' },
+      projectDir
+    );
+    assert.equal(r.status, 0);
+    assert.ok(r.stdout.includes('<system-reminder>'), 'expected system-reminder');
+    assert.ok(r.stdout.includes('HEARTBEAT'), 'expected HEARTBEAT marker');
+    assert.ok(r.stdout.includes('-stale-five.md'), 'expected filename in reminder');
+    assert.ok(r.stdout.includes('5 user prompts'), 'expected count=5 in reminder');
+  } finally { cleanup(); }
+});
+
+test('heartbeat: no reminder at 4 prompts (just below threshold)', () => {
+  const { projectDir, sessionsDir, cleanup } = setupProjectDir();
+  try {
+    const filePath = makeSessionFile(sessionsDir, today(), 'under', { sessionId: 's1' });
+    backdate(filePath, 3600);
+    makeRawJsonl(sessionsDir, 's1', eventsSince('s1', 4, 1800));
+    const r = runGate(
+      { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hi' },
+      projectDir
+    );
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout.trim(), '');
+  } finally { cleanup(); }
+});
+
+test('heartbeat: count capped at threshold+1 when 7 prompts present', () => {
+  const { projectDir, sessionsDir, cleanup } = setupProjectDir();
+  try {
+    const filePath = makeSessionFile(sessionsDir, today(), 'cap', { sessionId: 's1' });
+    backdate(filePath, 3600);
+    makeRawJsonl(sessionsDir, 's1', eventsSince('s1', 7, 1800));
+    const r = runGate(
+      { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hi' },
+      projectDir
+    );
+    assert.equal(r.status, 0);
+    assert.ok(r.stdout.includes('HEARTBEAT'));
+    assert.ok(r.stdout.includes('6 user prompts'), 'count should cap at 6 (threshold+1)');
+    assert.ok(!r.stdout.includes('7 user prompts'), 'count must not exceed cap');
+  } finally { cleanup(); }
+});
+
+test('heartbeat: fail-open when jsonl missing', () => {
+  const { projectDir, sessionsDir, cleanup } = setupProjectDir();
+  try {
+    const filePath = makeSessionFile(sessionsDir, today(), 'no-jsonl', { sessionId: 's1' });
+    backdate(filePath, 3600);
+    // No raw/s1.jsonl written.
+    const r = runGate(
+      { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hi' },
+      projectDir
+    );
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout.trim(), '');
+  } finally { cleanup(); }
+});
+
+test('heartbeat: skips malformed jsonl lines, still fires on 5 valid', () => {
+  const { projectDir, sessionsDir, cleanup } = setupProjectDir();
+  try {
+    const filePath = makeSessionFile(sessionsDir, today(), 'malformed', { sessionId: 's1' });
+    backdate(filePath, 3600);
+    const valid = eventsSince('s1', 5, 1800);
+    // 2 valid + garbage + 3 valid = 5 valid total, 1 unparseable
+    const lines = [
+      JSON.stringify(valid[0]),
+      JSON.stringify(valid[1]),
+      '{not json',
+      JSON.stringify(valid[2]),
+      JSON.stringify(valid[3]),
+      JSON.stringify(valid[4]),
+    ];
+    makeRawJsonl(sessionsDir, 's1', lines);
+    const r = runGate(
+      { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hi' },
+      projectDir
+    );
+    assert.equal(r.status, 0);
+    assert.ok(r.stdout.includes('HEARTBEAT'), 'reminder should fire despite malformed line');
+    assert.ok(r.stdout.includes('5 user prompts'));
+  } finally { cleanup(); }
+});
+
+test('heartbeat: does NOT fire when no session file (gate deny path)', () => {
+  const { projectDir, sessionsDir, cleanup } = setupProjectDir();
+  try {
+    // Even if jsonl has many stale events, no session file → only gate reminder fires.
+    makeRawJsonl(sessionsDir, 's1', eventsSince('s1', 7, 1800));
+    const r = runGate(
+      { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hi' },
+      projectDir
+    );
+    assert.equal(r.status, 0);
+    assert.ok(r.stdout.includes('SESSION GATE'), 'expected gate reminder');
+    assert.ok(!r.stdout.includes('HEARTBEAT'), 'must not fire heartbeat when gate denies');
+  } finally { cleanup(); }
+});
+
+test('heartbeat: respects opt-out marker (silent)', () => {
+  const { projectDir, sessionsDir, cleanup } = setupProjectDir();
+  try {
+    makeOptOutMarker(sessionsDir, 's1');
+    // Stale jsonl present, but no session file and opt-out → silent.
+    makeRawJsonl(sessionsDir, 's1', eventsSince('s1', 7, 1800));
+    const r = runGate(
+      { hook_event_name: 'UserPromptSubmit', session_id: 's1', prompt: 'hi' },
+      projectDir
+    );
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout.trim(), '');
   } finally { cleanup(); }
 });
